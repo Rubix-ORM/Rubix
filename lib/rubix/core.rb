@@ -316,63 +316,18 @@ module Rubix
       end
     end
 
-    # Concern module for mixin functionality
-    module Concern
-      def self.extended(base)
-        base.instance_variable_set(:@_dependencies, [])
-      end
-
-      def included(base = nil, &block)
-        if base.nil?
-          @_included_block = block
-        else
-          super
-        end
-      end
-
-      def class_methods(&class_methods_module_definition)
-        mod = const_defined?(:ClassMethods, false) ?
-              const_get(:ClassMethods) :
-              const_set(:ClassMethods, Module.new)
-
-        mod.module_eval(&class_methods_module_definition)
-      end
-
-      def append_features(base)
-        if base.instance_variable_defined?(:@_dependencies)
-          base.instance_variable_get(:@_dependencies) << self
-          false
-        else
-          return false if base < self
-          @_dependencies.each { |dep| base.include(dep) }
-          super
-          if instance_variable_defined?(:@_included_block)
-            base.class_eval(&@_included_block)
-          end
-          true
-        end
-      end
-    end
-
     # Callbacks system for lifecycle hooks
     module Callbacks
       def self.included(base)
-        base.extend(ClassMethods)
+        base.extend ClassMethods
       end
 
       module ClassMethods
-        def define_callbacks(*callbacks)
-          callbacks.each do |callback|
-            define_singleton_method("before_#{callback}") do |*methods|
-              set_callback(callback, :before, *methods)
-            end
-
-            define_singleton_method("after_#{callback}") do |*methods|
-              set_callback(callback, :after, *methods)
-            end
-
-            define_singleton_method("around_#{callback}") do |*methods|
-              set_callback(callback, :around, *methods)
+        def define_callbacks(*names)
+          names.each do |name|
+            instance_variable_set("@#{name}_callbacks", [])
+            define_singleton_method("#{name}_callbacks") do
+              instance_variable_get("@#{name}_callbacks")
             end
           end
         end
@@ -384,15 +339,24 @@ module Rubix
           instance_variable_set("@#{callback}_callbacks", callbacks)
         end
 
-        def get_callbacks(callback, kind)
-          callbacks = instance_variable_get("@#{callback}_callbacks") || {}
-          callbacks[kind] || []
+        [:before, :after].each do |time|
+          [:create, :update, :save, :destroy].each do |action|
+            define_method("#{time}_#{action}") do |*methods, &block|
+              methods.each { |method| set_callback("#{time}_#{action}", :methods, method) }
+              set_callback("#{time}_#{action}", :block, block) if block
+            end
+          end
         end
       end
 
-      def run_callbacks(callback, kind = :before)
-        self.class.get_callbacks(callback, kind).each do |method|
-          send(method)
+      def run_callbacks(kind, action)
+        callbacks = self.class.send("#{kind}_#{action}_callbacks") || []
+        callbacks.each do |cb|
+          if cb[:method]
+            send(cb[:method])
+          elsif cb[:block]
+            instance_eval(&cb[:block])
+          end
         end
       end
     end
@@ -409,6 +373,7 @@ module Rubix
 
       module ClassMethods
         def validates(*attributes, **options)
+          @validations ||= {}
           attributes.each do |attribute|
             @validations[attribute] ||= []
             @validations[attribute] << options
@@ -607,111 +572,6 @@ module Rubix
             message.to_s
           end
         end
-      end
-    end
-
-    # Serialization module
-    module Serialization
-      def to_xml(options = {})
-        require 'builder' unless defined?(::Builder)
-
-        options = options.dup
-        options[:indent] ||= 2
-        options[:root] ||= self.class.name.underscore
-
-        builder = options[:builder] ||= ::Builder::XmlMarkup.new(indent: options[:indent])
-        builder.instruct! unless options[:skip_instruct]
-
-        builder.tag!(options[:root]) do |root|
-          attributes.each do |key, value|
-            root.tag!(key.to_s, value)
-          end
-        end
-      end
-
-      def from_xml(xml)
-        require 'nokogiri' unless defined?(::Nokogiri)
-
-        doc = ::Nokogiri::XML(xml)
-        root = doc.root
-
-        attributes = {}
-        root.children.each do |child|
-          next unless child.element?
-          attributes[child.name.to_sym] = child.text
-        end
-
-        self.class.new(attributes)
-      end
-
-      def to_csv(options = {})
-        require 'csv' unless defined?(::CSV)
-
-        options = options.dup
-        options[:headers] ||= attributes.keys
-
-        ::CSV.generate do |csv|
-          csv << options[:headers] if options[:write_headers]
-          csv << attributes.values
-        end
-      end
-
-      def from_csv(csv_string, options = {})
-        require 'csv' unless defined?(::CSV)
-
-        rows = ::CSV.parse(csv_string, options)
-        headers = rows.shift if options[:headers]
-
-        attributes = {}
-        if headers
-          headers.each_with_index do |header, index|
-            attributes[header.to_sym] = rows.first[index]
-          end
-        else
-          attributes = rows.first
-        end
-
-        self.class.new(attributes)
-      end
-
-      def to_yaml
-        attributes.to_yaml
-      end
-
-      def from_yaml(yaml_string)
-        data = YAML.load(yaml_string)
-        self.class.new(data)
-      end
-
-      def serializable_hash(options = {})
-        options = options.dup
-        options[:only] = Array(options[:only]) if options[:only]
-        options[:except] = Array(options[:except]) if options[:except]
-
-        hash = attributes.dup
-
-        if options[:only]
-          hash = hash.slice(*options[:only])
-        end
-
-        if options[:except]
-          hash = hash.except(*options[:except])
-        end
-
-        if options[:include]
-          options[:include].each do |association|
-            if respond_to?(association)
-              associated_object = send(association)
-              if associated_object.respond_to?(:serializable_hash)
-                hash[association] = associated_object.serializable_hash
-              else
-                hash[association] = associated_object
-              end
-            end
-          end
-        end
-
-        hash
       end
     end
   end

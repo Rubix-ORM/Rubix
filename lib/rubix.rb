@@ -347,7 +347,7 @@ module Rubix
 
   class ::Array
     def extract_options!
-      if last.is_a?(Hash) && last.extractable_options?
+      if last.is_a?(Hash)
         pop
       else
         {}
@@ -382,6 +382,10 @@ module Rubix
 
     def classify
       singularize.camelize
+    end
+
+    def tableize
+      underscore.pluralize
     end
 
     def titleize
@@ -459,28 +463,8 @@ module Rubix
 end
 
 # Load all framework components
-require_relative 'rubix_framework/core/base'
-require_relative 'rubix_framework/core/inflector'
-require_relative 'rubix_framework/core/concern'
-require_relative 'rubix_framework/core/callbacks'
-require_relative 'rubix_framework/core/validations'
-require_relative 'rubix_framework/core/serialization'
-require_relative 'rubix_framework/database/connection'
-require_relative 'rubix_framework/database/model'
-require_relative 'rubix_framework/database/query_builder'
-require_relative 'rubix_framework/database/migrations'
-require_relative 'rubix_framework/auth/user'
-require_relative 'rubix_framework/auth/session'
-require_relative 'rubix_framework/auth/permissions'
-require_relative 'rubix_framework/web/router'
-require_relative 'rubix_framework/web/controller'
-require_relative 'rubix_framework/web/server'
-require_relative 'rubix_framework/web/middleware'
-require_relative 'rubix_framework/models/base'
-require_relative 'rubix_framework/testing/test_case'
-require_relative 'rubix_framework/testing/assertions'
-require_relative 'rubix_framework/config/loader'
-require_relative 'rubix_framework/utils/file_manager'
-require_relative 'rubix_framework/utils/http_client'
-require_relative 'rubix_framework/logging/logger'
-require_relative 'rubix_framework/logging/formatter'
+require_relative 'rubix/core'
+require_relative 'rubix/database'
+require_relative 'rubix/web'
+require_relative 'rubix/models'
+require_relative 'rubix/testing'
